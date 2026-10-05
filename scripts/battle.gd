@@ -27,6 +27,9 @@ const VIRTUAL_PAD_SCRIPT := preload("res://scripts/virtual_pad.gd")
 const FIRE_PAD_SCRIPT := preload("res://scripts/fire_pad.gd")
 const NAVAL_PANEL_SCRIPT := preload("res://scripts/naval_panel.gd")
 
+## Uniform world scale for all ships (visual + collision + related FX).
+const SHIP_SCALE := 0.65
+
 var font: Font
 var player: Ship
 var enemies: Array[Ship] = []
@@ -233,7 +236,7 @@ func _build_ships() -> void:
 	player.hull = Color(0.24, 0.34, 0.40)
 	player.deck = Color(0.78, 0.76, 0.66)
 	player.turret_pivots = []
-	if _blocked(player.pos, 30.0):
+	if _blocked(player.pos, 30.0 * SHIP_SCALE):
 		player.pos = Vector2(480, 1000)
 	_compose_ship(player)
 
@@ -265,7 +268,7 @@ func _build_ships() -> void:
 		e.goal = _random_water()
 		e.think = randf_range(2.0, 4.5)
 		e.turret_pivots = []
-		if _blocked(e.pos, 24.0):
+		if _blocked(e.pos, 24.0 * SHIP_SCALE):
 			e.pos = _random_water()
 		_compose_ship(e)
 		enemies.append(e)
@@ -364,6 +367,11 @@ func _compose_ship(s: Ship) -> void:
 	wake.visible = false
 	body.add_child(wake)
 	s.wake = wake
+	# Uniform ship scale: visual root + gameplay sizes derived from design units.
+	body.scale = Vector3.ONE * SHIP_SCALE
+	s.radius *= SHIP_SCALE
+	s.gun_y *= SHIP_SCALE
+	s.mount *= SHIP_SCALE
 	_sync_ship(s)
 
 
@@ -1133,7 +1141,7 @@ func _steer_enemies(dt: float) -> void:
 				e.turret = e.heading + signf(rel) * 2.35
 			if e.cd <= 0.0:
 				var ang := absf(wrapf(to_player.angle() - e.heading, -PI, PI))
-				if dist < ENEMY_RANGE and dist > 90.0 and ang < ENEMY_ARC:
+				if dist < ENEMY_RANGE and dist > 90.0 * SHIP_SCALE and ang < ENEMY_ARC:
 					_spawn_shell(e, to_player.angle(), false)
 					e.cd = ENEMY_CD
 		else:
@@ -1144,7 +1152,7 @@ func _steer_enemies(dt: float) -> void:
 func _pick_goal() -> Vector2:
 	if player.afloat and randf() < 0.7:
 		var guess := player.pos + Vector2.from_angle(randf() * TAU) * randf_range(220, 520)
-		if not _blocked(guess, 40.0):
+		if not _blocked(guess, 40.0 * SHIP_SCALE):
 			return guess
 	return _random_water()
 
@@ -1175,9 +1183,9 @@ func _separate() -> void:
 			var need := a.radius + b.radius
 			if dist < need and dist > 0.01:
 				var push := d.normalized() * (need - dist) * 0.5
-				if not _blocked(a.pos + push, 8.0):
+				if not _blocked(a.pos + push, 8.0 * SHIP_SCALE):
 					a.pos += push
-				if not _blocked(b.pos - push, 8.0):
+				if not _blocked(b.pos - push, 8.0 * SHIP_SCALE):
 					b.pos -= push
 
 
@@ -1186,9 +1194,9 @@ func _spawn_shell(owner: Ship, angle: float, from_player: bool) -> void:
 	sh.owner = owner
 	sh.from_player = from_player
 	sh.dir = Vector2.from_angle(angle)
-	sh.pos = owner.pos + sh.dir * (owner.radius + 16.0)
+	sh.pos = owner.pos + sh.dir * (owner.radius + 16.0 * SHIP_SCALE)
 	sh.life = SHELL_LIFE
-	sh.gun_y = maxf(5.5, owner.gun_y * 0.75)
+	sh.gun_y = maxf(5.5 * SHIP_SCALE, owner.gun_y * 0.75)
 	var mi := MeshInstance3D.new()
 	mi.mesh = shell_mesh
 	mi.material_override = shell_mat_player if from_player else shell_mat_enemy
@@ -1319,7 +1327,7 @@ func _spawn_splash(at: Vector2) -> void:
 	spray.name = "Spray"
 	spray.mesh = flash_mesh
 	spray.position = Vector3(0.0, 2.4, 0.0)
-	spray.scale = Vector3(0.55, 1.3, 0.55)
+	spray.scale = Vector3(0.55, 1.3, 0.55) * SHIP_SCALE
 	spray.material_override = mat
 	spray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(spray)
@@ -1346,7 +1354,7 @@ func _spawn_flash(at: Vector2, height: float) -> void:
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.72, 0.38)
 	light.light_energy = 2.6
-	light.omni_range = 55.0
+	light.omni_range = 55.0 * SHIP_SCALE
 	light.shadow_enabled = false
 	root.add_child(light)
 	add_child(root)
@@ -1367,14 +1375,14 @@ func _tick_effects(dt: float) -> void:
 		col.a = (0.85 if kind == "splash" else 0.95) * (1.0 - k)
 		mat.albedo_color = col
 		if kind == "splash":
-			var sc := 3.2 + k * 22.0
+			var sc := (3.2 + k * 22.0) * SHIP_SCALE
 			ring.scale = Vector3(sc, sc * 0.55, sc)
 			var spray := root.get_node_or_null("Spray") as MeshInstance3D
 			if spray != null:
-				spray.position.y = 2.0 + k * 7.0
-				spray.scale = Vector3(0.4 + k * 1.4, 1.2 + k * 2.4, 0.4 + k * 1.4)
+				spray.position.y = (2.0 + k * 7.0) * SHIP_SCALE
+				spray.scale = Vector3(0.4 + k * 1.4, 1.2 + k * 2.4, 0.4 + k * 1.4) * SHIP_SCALE
 		else:
-			var fs := 0.7 + k * 2.4
+			var fs := (0.7 + k * 2.4) * SHIP_SCALE
 			ring.scale = Vector3(fs, fs, fs)
 			var light: OmniLight3D = effects[i]["light"]
 			if light != null:
@@ -1396,7 +1404,7 @@ func _sync_world(dt: float) -> void:
 func _sync_ship(s: Ship) -> void:
 	if s.body == null:
 		return
-	var bob := sin(sea_time * 1.05 + s.pos.x * 0.01) * 1.15 + cos(sea_time * 0.8 + s.pos.y * 0.011) * 0.55
+	var bob := (sin(sea_time * 1.05 + s.pos.x * 0.01) * 1.15 + cos(sea_time * 0.8 + s.pos.y * 0.011) * 0.55) * SHIP_SCALE
 	var y := bob
 	var pitch := sin(sea_time * 0.7 + s.pos.y * 0.008) * 0.03
 	var roll := cos(sea_time * 0.9 + s.pos.x * 0.008) * 0.04
@@ -1436,7 +1444,7 @@ func _sync_shell(sh: Shell) -> void:
 func _sync_aim() -> void:
 	var show := player != null and player.afloat and outcome == ""
 	var fwd := Vector3(cos(player.turret), 0.0, sin(player.turret))
-	var origin := Vector3(player.pos.x, 2.2, player.pos.y)
+	var origin := Vector3(player.pos.x, 2.2 * SHIP_SCALE, player.pos.y)
 	var dists: Array[float] = [42.0, 90.0, 146.0, 210.0, 280.0, 360.0]
 	for i in aim_marks.size():
 		var mark: MeshInstance3D = aim_marks[i]
@@ -1451,9 +1459,10 @@ func _place_camera(dt: float) -> void:
 	if cam == null or player == null:
 		return
 	var fwd := Vector3(cos(player.heading), 0.0, sin(player.heading))
-	var focus := Vector3(player.pos.x, 5.0, player.pos.y)
-	var desired := focus - fwd * 205.0 + Vector3(0.0, 78.0, 0.0)
-	var look := focus + fwd * 78.0 + Vector3(0.0, 6.0, 0.0)
+	var focus := Vector3(player.pos.x, 5.0 * SHIP_SCALE, player.pos.y)
+	# Slightly farther/higher than the pre-scale camera so the smaller BB stays readable with more sea in view.
+	var desired := focus - fwd * 230.0 + Vector3(0.0, 88.0, 0.0)
+	var look := focus + fwd * 90.0 + Vector3(0.0, 6.0, 0.0)
 	if not cam_ready:
 		cam.position = desired
 		cam_ready = true
@@ -1519,7 +1528,7 @@ func _all_ships() -> Array[Ship]:
 func _random_water() -> Vector2:
 	for _i in 24:
 		var p := Vector2(randf_range(180, WORLD_W - 180), randf_range(180, WORLD_H - 180))
-		if not _blocked(p, 50.0):
+		if not _blocked(p, 50.0 * SHIP_SCALE):
 			return p
 	return Vector2(WORLD_W * 0.5, WORLD_H * 0.5)
 
@@ -1616,9 +1625,9 @@ func draw_minimap(c: Control) -> void:
 		if e.sink >= 1.15:
 			continue
 		var dot := Color(0.92, 0.34, 0.28, 1.0 if e.afloat else 0.35)
-		var dot_r := 4.2 if e.kind == 1 else 2.5
-		c.draw_circle(Vector2(e.pos.x * sx, e.pos.y * sy), dot_r, dot)
+		var dot_r := (4.2 if e.kind == 1 else 2.5) * SHIP_SCALE
+		c.draw_circle(Vector2(e.pos.x * sx, e.pos.y * sy), maxf(1.6, dot_r), dot)
 	if player.sink < 1.15:
-		c.draw_circle(Vector2(player.pos.x * sx, player.pos.y * sy), 4.0, Color(0.96, 0.86, 0.32))
+		c.draw_circle(Vector2(player.pos.x * sx, player.pos.y * sy), maxf(2.2, 4.0 * SHIP_SCALE), Color(0.96, 0.86, 0.32))
 	c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.78, 0.86, 0.82, 0.85), false, 1.5)
 
