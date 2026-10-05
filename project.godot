@@ -1,0 +1,22 @@
+; Engine configuration file.
+; 海戰風雲錄 — original 3D naval battle prototype (Godot 4)
+
+config_version=5
+
+[application]
+
+config/name="海戰風雲錄"
+config/description="Original 3D naval battle prototype"
+run/main_scene="res://scenes/battle.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
