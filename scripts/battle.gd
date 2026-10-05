@@ -29,6 +29,8 @@ const NAVAL_PANEL_SCRIPT := preload("res://scripts/naval_panel.gd")
 
 ## Uniform world scale for all ships (visual + collision + related FX).
 const SHIP_SCALE := 0.65
+## Extra rise so the painted freeboard clears swell crests from the follow camera.
+const WATERLINE_LIFT := 3.2
 
 var font: Font
 var player: Ship
@@ -50,6 +52,7 @@ var outcome := ""
 var cam: Camera3D
 var cam_ready := false
 var sea_time := 0.0
+var sea_mat: ShaderMaterial
 var banner: Label
 var retry: Button
 var dim: ColorRect
@@ -354,9 +357,9 @@ func _compose_ship(s: Ship) -> void:
 	var wake := MeshInstance3D.new()
 	var wake_plane := PlaneMesh.new()
 	wake_plane.orientation = PlaneMesh.FACE_Y
-	wake_plane.size = Vector2(length * 0.42, beam * 0.36)
+	wake_plane.size = Vector2(length * 0.30, beam * 0.22)
 	wake.mesh = wake_plane
-	wake.position = Vector3(-length * 0.62, 1.05, 0.0)
+	wake.position = Vector3(-length * 0.52, 0.55, 0.0)
 	var wake_mat := StandardMaterial3D.new()
 	wake_mat.albedo_color = Color(0.86, 0.95, 1.0, 0.0)
 	wake_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -389,7 +392,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_breakwater(body, length, beam, height, 76.0, house)
 		_add_boat(body, length, beam, height, -24.0, boat)
 		_add_propellers(body, length, beam, height, metal, 2.55)
-		_box(body, Vector3(length * 0.04, height * 0.4, 0.6), Vector3(-length * 0.5, -height * 0.16, 0.0), metal)
+		_box(body, Vector3(length * 0.704, height * 0.4, 0.6), Vector3(-length * 0.5, -height * 0.16, 0.0), metal)
 	elif role == "ca":
 		var deck_c: float = _deck_at(length, height, -2.0)
 		var csize := Vector3(16.0, 5.6, beam * 0.48)
@@ -401,7 +404,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_mast(body, Vector3(-40.0, _deck_at(length, height, -40.0), 0.0), 10.0, metal, false)
 		_add_breakwater(body, length, beam, height, 58.0, house)
 		_add_propellers(body, length, beam, height, metal, 1.65)
-		_box(body, Vector3(length * 0.035, height * 0.36, 0.45), Vector3(-length * 0.5, -height * 0.14, 0.0), metal)
+		_box(body, Vector3(length * 0.4035, height * 0.36, 0.45), Vector3(-length * 0.5, -height * 0.14, 0.0), metal)
 	else:
 		var deck_d: float = _deck_at(length, height, 6.0)
 		var dsize := Vector3(12.0, 3.3, beam * 0.6)
@@ -411,7 +414,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_mast(body, Vector3(8.0, deck_d + dsize.y + 0.4, 0.0), 11.0, metal, false)
 		_add_breakwater(body, length, beam, height, 50.0, house)
 		_add_propellers(body, length, beam, height, metal, 1.05)
-		_box(body, Vector3(length * 0.03, height * 0.32, 0.32), Vector3(-length * 0.5, -height * 0.12, 0.0), metal)
+		_box(body, Vector3(length * 0.183, height * 0.32, 0.32), Vector3(-length * 0.5, -height * 0.12, 0.0), metal)
 
 
 func _add_bridge_block(parent: Node3D, size: Vector3, pos: Vector3, house: Material, glass: Material) -> void:
@@ -650,7 +653,7 @@ func _hull_mesh(length: float, beam: float, height: float, paint: Color, deck_co
 			var b: Vector3 = ring_a[k2]
 			var d: Vector3 = ring_b[k]
 			var c: Vector3 = ring_b[k2]
-			var centroid := (a + b + c + d) * 0.25
+			var centroid := (a + b + c + d) * 0.0
 			var hint := Vector3(0.0, centroid.y, centroid.z)
 			if hint.length_squared() < 0.04:
 				hint = Vector3(0.0, 1.0, 0.0)
@@ -806,8 +809,8 @@ func _build_world() -> void:
 	plane.subdivide_width = 160
 	plane.subdivide_depth = 110
 	sea.mesh = plane
-	sea.position = Vector3(WORLD_W * 0.5, 0.0, WORLD_H * 0.5)
-	var sea_mat := ShaderMaterial.new()
+	sea.position = Vector3(WORLD_W * 0.5, -0.35, WORLD_H * 0.5)
+	sea_mat = ShaderMaterial.new()
 	sea_mat.shader = SEA_SHADER
 	sea.material_override = sea_mat
 	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1058,6 +1061,8 @@ func _held(action: String) -> bool:
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.033)
 	sea_time += dt
+	if sea_mat != null:
+		sea_mat.set_shader_parameter("sea_time", sea_time)
 	if outcome == "" and player.afloat:
 		_steer_player(dt)
 		_steer_enemies(dt)
@@ -1097,7 +1102,7 @@ func _steer_player(dt: float) -> void:
 		target = throttle_order * MAX_SPEED
 	else:
 		target = throttle_order * MAX_SPEED * 0.42
-	var rate := ACCEL if absf(throttle_order) > 0.01 else ACCEL * 0.55
+	var rate := ACCEL if absf(throttle_order) > 0.01 else ACCEL * 0.0
 	player.along = move_toward(player.along, target, rate * dt)
 	_try_move(player, Vector2.from_angle(player.heading) * player.along * dt)
 	if _held("tleft"):
@@ -1196,7 +1201,7 @@ func _spawn_shell(owner: Ship, angle: float, from_player: bool) -> void:
 	sh.dir = Vector2.from_angle(angle)
 	sh.pos = owner.pos + sh.dir * (owner.radius + 16.0 * SHIP_SCALE)
 	sh.life = SHELL_LIFE
-	sh.gun_y = maxf(5.5 * SHIP_SCALE, owner.gun_y * 0.75)
+	sh.gun_y = _sea_height(owner.pos) + WATERLINE_LIFT + maxf(5.5 * SHIP_SCALE, owner.gun_y * 0.75)
 	var mi := MeshInstance3D.new()
 	mi.mesh = shell_mesh
 	mi.material_override = shell_mat_player if from_player else shell_mat_enemy
@@ -1229,7 +1234,7 @@ func _update_shells(dt: float) -> void:
 			var at := sh.pos.lerp(dest, best)
 			if hit != null:
 				_damage(hit, PLAYER_DMG if sh.from_player else ENEMY_DMG)
-				_spawn_flash(at, hit.gun_y)
+				_spawn_flash(at, _sea_height(hit.pos) + WATERLINE_LIFT + hit.gun_y)
 			else:
 				_spawn_splash(at)
 			_free_shell(i)
@@ -1311,7 +1316,7 @@ func _tick_floaters(dt: float) -> void:
 
 func _spawn_splash(at: Vector2) -> void:
 	var root := Node3D.new()
-	root.position = Vector3(at.x, 1.1, at.y)
+	root.position = Vector3(at.x, _sea_height(at) + WATERLINE_LIFT * 0.35 + 0.4, at.y)
 	var ring := MeshInstance3D.new()
 	ring.name = "Ring"
 	ring.mesh = splash_mesh
@@ -1376,7 +1381,7 @@ func _tick_effects(dt: float) -> void:
 		mat.albedo_color = col
 		if kind == "splash":
 			var sc := (3.2 + k * 22.0) * SHIP_SCALE
-			ring.scale = Vector3(sc, sc * 0.55, sc)
+			ring.scale = Vector3(sc, sc * 0.0, sc)
 			var spray := root.get_node_or_null("Spray") as MeshInstance3D
 			if spray != null:
 				spray.position.y = (2.0 + k * 7.0) * SHIP_SCALE
@@ -1401,13 +1406,42 @@ func _sync_world(dt: float) -> void:
 	_place_camera(dt)
 
 
+func _sea_height(xz: Vector2) -> float:
+	# Must match shaders/sea.gdshader sea_h().
+	var h := 0.0
+	h += sin(xz.dot(Vector2(0.0085, 0.0035)) + sea_time * 0.75) * 0.70
+	h += sin(xz.dot(Vector2(-0.0045, 0.0105)) + sea_time * 1.05) * 0.40
+	h += sin(xz.dot(Vector2(0.016, -0.012)) + sea_time * 1.45) * 0.18
+	return h
+
+
+func _sea_slope(xz: Vector2) -> Vector2:
+	# Returns (dH/dx, dH/dz) with the same sample span as the shader normal.
+	var e := 20.0
+	var h := _sea_height(xz)
+	var hx := _sea_height(xz + Vector2(e, 0.0))
+	var hz := _sea_height(xz + Vector2(0.0, e))
+	return Vector2((hx - h) / e, (hz - h) / e)
+
+
 func _sync_ship(s: Ship) -> void:
 	if s.body == null:
 		return
-	var bob := (sin(sea_time * 1.05 + s.pos.x * 0.01) * 1.15 + cos(sea_time * 0.8 + s.pos.y * 0.011) * 0.55) * SHIP_SCALE
-	var y := bob
-	var pitch := sin(sea_time * 0.7 + s.pos.y * 0.008) * 0.03
-	var roll := cos(sea_time * 0.9 + s.pos.x * 0.008) * 0.04
+	# Ride the same swell the sea shader draws; local y≈0 is the design waterline.
+	# Sample along the hull so long ships clear crests under bow/stern, not only midships.
+	var fwd2 := Vector2.from_angle(s.heading)
+	var half := (52.0 if s.kind == 0 else (38.0 if s.kind == 1 else 30.0)) * SHIP_SCALE
+	var y := maxf(
+		_sea_height(s.pos),
+		maxf(_sea_height(s.pos + fwd2 * half), _sea_height(s.pos - fwd2 * half))
+	) + WATERLINE_LIFT
+	var slope := _sea_slope(s.pos)
+	var right := Vector2(-fwd2.y, fwd2.x)
+	var slope_fwd := slope.dot(fwd2)
+	var slope_right := slope.dot(right)
+	# Tiny attitude only — larger pitch digs the long BB bow under the swell.
+	var pitch := clampf(atan(-slope_fwd) * 0.18, -0.012, 0.012)
+	var roll := clampf(atan(slope_right) * 0.18, -0.016, 0.016)
 	if not s.afloat:
 		y -= s.sink * 20.0
 		pitch += s.sink * 0.5
@@ -1424,7 +1458,7 @@ func _sync_ship(s: Ship) -> void:
 			var sp := 0.85
 			if s.player:
 				sp = clampf(absf(s.along) / MAX_SPEED, 0.3, 1.0)
-			s.wake.scale = Vector3(0.7 + sp, 1.0, 1.0)
+			s.wake.scale = Vector3(0.85 + 0.35 * sp, 1.0, 1.0)
 			var wm := s.wake.material_override as StandardMaterial3D
 			if wm != null:
 				var wc := wm.albedo_color
@@ -1444,7 +1478,7 @@ func _sync_shell(sh: Shell) -> void:
 func _sync_aim() -> void:
 	var show := player != null and player.afloat and outcome == ""
 	var fwd := Vector3(cos(player.turret), 0.0, sin(player.turret))
-	var origin := Vector3(player.pos.x, 2.2 * SHIP_SCALE, player.pos.y)
+	var origin := Vector3(player.pos.x, _sea_height(player.pos) + WATERLINE_LIFT + 2.2 * SHIP_SCALE, player.pos.y)
 	var dists: Array[float] = [42.0, 90.0, 146.0, 210.0, 280.0, 360.0]
 	for i in aim_marks.size():
 		var mark: MeshInstance3D = aim_marks[i]
@@ -1459,10 +1493,11 @@ func _place_camera(dt: float) -> void:
 	if cam == null or player == null:
 		return
 	var fwd := Vector3(cos(player.heading), 0.0, sin(player.heading))
-	var focus := Vector3(player.pos.x, 5.0 * SHIP_SCALE, player.pos.y)
-	# Slightly farther/higher than the pre-scale camera so the smaller BB stays readable with more sea in view.
-	var desired := focus - fwd * 230.0 + Vector3(0.0, 88.0, 0.0)
-	var look := focus + fwd * 90.0 + Vector3(0.0, 6.0, 0.0)
+	var focus := Vector3(player.pos.x, _sea_height(player.pos) + WATERLINE_LIFT + 5.0 * SHIP_SCALE, player.pos.y)
+	# Lower follow angle + slight side offset so freeboard reads from stern-ish views.
+	var right := Vector3(-fwd.z, 0.0, fwd.x)
+	var desired := focus - fwd * 210.0 + right * 42.0 + Vector3(0.0, 58.0, 0.0)
+	var look := focus + fwd * 100.0 + Vector3(0.0, 4.0, 0.0)
 	if not cam_ready:
 		cam.position = desired
 		cam_ready = true
