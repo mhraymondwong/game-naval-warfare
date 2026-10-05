@@ -69,6 +69,7 @@ var flash_mesh: SphereMesh
 var shell_mat_player: StandardMaterial3D
 var shell_mat_enemy: StandardMaterial3D
 var hull_mat: StandardMaterial3D
+var wake_mat: StandardMaterial3D
 
 class Ship:
 	var pos := Vector2.ZERO
@@ -91,6 +92,8 @@ class Ship:
 	var gun_y := 8.0
 	var body: Node3D
 	var wake: MeshInstance3D
+	var wake_trail: Array[Vector2] = []
+	var wake_beam := 12.0
 	var turret_pivots: Array[Node3D] = []
 
 class Shell:
@@ -145,6 +148,16 @@ func _build_fx_meshes() -> void:
 	hull_mat.roughness = 0.55
 	hull_mat.metallic = 0.2
 	hull_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	wake_mat = StandardMaterial3D.new()
+	wake_mat.albedo_color = Color(0.88, 0.97, 1.0, 1.0)
+	wake_mat.vertex_color_use_as_albedo = true
+	wake_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	wake_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	wake_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	wake_mat.emission_enabled = true
+	wake_mat.emission = Color(0.72, 0.9, 1.0)
+	wake_mat.emission_energy_multiplier = 0.55
+	wake_mat.no_depth_test = false
 
 
 func _shot_mat(color: Color) -> StandardMaterial3D:
@@ -355,21 +368,14 @@ func _compose_ship(s: Ship) -> void:
 	if role == "bb":
 		_add_broadsides(body, length, beam, height, turret_mat, barrel_mat)
 	var wake := MeshInstance3D.new()
-	var wake_plane := PlaneMesh.new()
-	wake_plane.orientation = PlaneMesh.FACE_Y
-	wake_plane.size = Vector2(length * 0.30, beam * 0.22)
-	wake.mesh = wake_plane
-	wake.position = Vector3(-length * 0.52, 0.55, 0.0)
-	var wake_mat := StandardMaterial3D.new()
-	wake_mat.albedo_color = Color(0.86, 0.95, 1.0, 0.0)
-	wake_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	wake_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	wake_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	wake.name = "WakeRibbon"
 	wake.material_override = wake_mat
 	wake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	wake.visible = false
-	body.add_child(wake)
+	add_child(wake)
 	s.wake = wake
+	s.wake_trail = []
+	s.wake_beam = beam * 0.85
 	# Uniform ship scale: visual root + gameplay sizes derived from design units.
 	body.scale = Vector3.ONE * SHIP_SCALE
 	s.radius *= SHIP_SCALE
@@ -392,7 +398,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_breakwater(body, length, beam, height, 76.0, house)
 		_add_boat(body, length, beam, height, -24.0, boat)
 		_add_propellers(body, length, beam, height, metal, 2.55)
-		_box(body, Vector3(length * 0.704, height * 0.4, 0.6), Vector3(-length * 0.5, -height * 0.16, 0.0), metal)
+		_box(body, Vector3(length * 0.28, height * 0.22, 0.5), Vector3(-length * 0.22, -height * 0.18, 0.0), metal)
 	elif role == "ca":
 		var deck_c: float = _deck_at(length, height, -2.0)
 		var csize := Vector3(16.0, 5.6, beam * 0.48)
@@ -404,7 +410,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_mast(body, Vector3(-40.0, _deck_at(length, height, -40.0), 0.0), 10.0, metal, false)
 		_add_breakwater(body, length, beam, height, 58.0, house)
 		_add_propellers(body, length, beam, height, metal, 1.65)
-		_box(body, Vector3(length * 0.4035, height * 0.36, 0.45), Vector3(-length * 0.5, -height * 0.14, 0.0), metal)
+		_box(body, Vector3(length * 0.22, height * 0.2, 0.4), Vector3(-length * 0.2, -height * 0.16, 0.0), metal)
 	else:
 		var deck_d: float = _deck_at(length, height, 6.0)
 		var dsize := Vector3(12.0, 3.3, beam * 0.6)
@@ -414,7 +420,7 @@ func _dress_ship(body: Node3D, role: String, length: float, beam: float, height:
 		_add_mast(body, Vector3(8.0, deck_d + dsize.y + 0.4, 0.0), 11.0, metal, false)
 		_add_breakwater(body, length, beam, height, 50.0, house)
 		_add_propellers(body, length, beam, height, metal, 1.05)
-		_box(body, Vector3(length * 0.183, height * 0.32, 0.32), Vector3(-length * 0.5, -height * 0.12, 0.0), metal)
+		_box(body, Vector3(length * 0.16, height * 0.18, 0.28), Vector3(-length * 0.18, -height * 0.14, 0.0), metal)
 
 
 func _add_bridge_block(parent: Node3D, size: Vector3, pos: Vector3, house: Material, glass: Material) -> void:
@@ -1451,19 +1457,156 @@ func _sync_ship(s: Ship) -> void:
 	var local_yaw := wrapf(s.heading - s.turret, -PI, PI)
 	for piv in s.turret_pivots:
 		piv.rotation.y = local_yaw
-	if s.wake != null:
-		var moving := s.afloat and ((not s.player) or absf(s.along) > 28.0)
-		s.wake.visible = moving
-		if moving:
-			var sp := 0.85
-			if s.player:
-				sp = clampf(absf(s.along) / MAX_SPEED, 0.3, 1.0)
-			s.wake.scale = Vector3(0.85 + 0.35 * sp, 1.0, 1.0)
-			var wm := s.wake.material_override as StandardMaterial3D
-			if wm != null:
-				var wc := wm.albedo_color
-				wc.a = 0.16 + 0.3 * sp
-				wm.albedo_color = wc
+	_update_wake_ribbon(s)
+
+
+func _ship_speed(s: Ship) -> float:
+	if not s.afloat:
+		return 0.0
+	if s.player:
+		return absf(s.along)
+	return ENEMY_SPEED
+
+
+func _stern_world(s: Ship) -> Vector2:
+	var aft := (82.0 if s.kind == 0 else (62.0 if s.kind == 1 else 50.0)) * SHIP_SCALE
+	return s.pos + Vector2.from_angle(s.heading + PI) * aft
+
+
+func _update_wake_ribbon(s: Ship) -> void:
+	if s.wake == null:
+		return
+	var speed := _ship_speed(s)
+	var moving := s.afloat and speed > 18.0
+	if not moving:
+		s.wake_trail.clear()
+		s.wake.visible = false
+		s.wake.mesh = null
+		return
+	var stern := _stern_world(s)
+	var sample := 7.5 * SHIP_SCALE
+	if s.wake_trail.is_empty() or s.wake_trail[s.wake_trail.size() - 1].distance_to(stern) >= sample:
+		s.wake_trail.append(stern)
+	var max_len := lerpf(55.0, 210.0, clampf(speed / MAX_SPEED, 0.0, 1.0)) * SHIP_SCALE
+	if not s.player:
+		max_len = lerpf(50.0, 140.0, clampf(speed / MAX_SPEED, 0.0, 1.0)) * SHIP_SCALE
+	# Trim oldest points so path length <= max_len.
+	while s.wake_trail.size() > 2:
+		var total := 0.0
+		for i in range(1, s.wake_trail.size()):
+			total += s.wake_trail[i].distance_to(s.wake_trail[i - 1])
+		if total <= max_len:
+			break
+		s.wake_trail.remove_at(0)
+	# Cap point count for mesh cost.
+	while s.wake_trail.size() > 36:
+		s.wake_trail.remove_at(0)
+	# Keep the newest point glued to the live stern.
+	if not s.wake_trail.is_empty():
+		s.wake_trail[s.wake_trail.size() - 1] = stern
+	_rebuild_wake_mesh(s, speed)
+
+
+func _rebuild_wake_mesh(s: Ship, speed: float) -> void:
+	var trail: Array[Vector2] = s.wake_trail
+	var n := trail.size()
+	if n < 2:
+		s.wake.visible = false
+		s.wake.mesh = null
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var beam0: float = maxf(4.0, s.wake_beam * SHIP_SCALE)
+	var strength := clampf(speed / MAX_SPEED, 0.2, 1.0)
+	if not s.player:
+		strength = clampf(speed / MAX_SPEED, 0.25, 0.85)
+	for i in range(n - 1):
+		var p0: Vector2 = trail[i]
+		var p1: Vector2 = trail[i + 1]
+		var u0 := float(i) / float(n - 1)
+		var u1 := float(i + 1) / float(n - 1)
+		# u=0 oldest (far) → wide + faded; u=1 newest (stern) → narrow + brighter
+		var tang0: Vector2
+		var tang1: Vector2
+		if i == 0:
+			tang0 = (trail[1] - trail[0])
+		else:
+			tang0 = (trail[i + 1] - trail[i - 1])
+		if i + 2 < n:
+			tang1 = (trail[i + 2] - trail[i])
+		else:
+			tang1 = (trail[n - 1] - trail[n - 2])
+		if tang0.length_squared() < 0.0001:
+			tang0 = Vector2.RIGHT
+		if tang1.length_squared() < 0.0001:
+			tang1 = tang0
+		tang0 = tang0.normalized()
+		tang1 = tang1.normalized()
+		var perp0 := Vector2(-tang0.y, tang0.x)
+		var perp1 := Vector2(-tang1.y, tang1.x)
+		var w0 := lerpf(beam0 * 2.65, beam0 * 0.2, u0)
+		var w1 := lerpf(beam0 * 2.65, beam0 * 0.2, u1)
+		var a0 := pow(u0, 0.95) * (0.26 + 0.52 * strength)
+		var a1 := pow(u1, 0.95) * (0.26 + 0.52 * strength)
+		var y0 := _sea_height(p0) + 0.55
+		var y1 := _sea_height(p1) + 0.55
+		var l0 := Vector3(p0.x - perp0.x * w0, y0, p0.y - perp0.y * w0)
+		var r0 := Vector3(p0.x + perp0.x * w0, y0, p0.y + perp0.y * w0)
+		var l1 := Vector3(p1.x - perp1.x * w1, y1, p1.y - perp1.y * w1)
+		var r1 := Vector3(p1.x + perp1.x * w1, y1, p1.y + perp1.y * w1)
+		# Soft V: brighter foam banks, faded outer edge + quieter center.
+		var m0 := (l0 + r0) * 0.5
+		var m1 := (l1 + r1) * 0.5
+		var q0 := l0.lerp(m0, 0.55)
+		var q1 := l1.lerp(m1, 0.55)
+		var p0b := r0.lerp(m0, 0.55)
+		var p1b := r1.lerp(m1, 0.55)
+		var c_edge := Color(0.86, 0.96, 1.0, 0.0)
+		var c_bank0 := Color(0.94, 0.99, 1.0, a0)
+		var c_bank1 := Color(0.94, 0.99, 1.0, a1)
+		var c_mid0 := Color(0.9, 0.97, 1.0, a0 * 0.28)
+		var c_mid1 := Color(0.9, 0.97, 1.0, a1 * 0.28)
+		# left bank
+		_wake_tri(st, l0, q0, q1, c_edge, c_bank0, c_bank1)
+		_wake_tri(st, l0, q1, l1, c_edge, c_bank1, c_edge)
+		_wake_tri(st, q0, m0, m1, c_bank0, c_mid0, c_mid1)
+		_wake_tri(st, q0, m1, q1, c_bank0, c_mid1, c_bank1)
+		# right bank
+		_wake_tri(st, p0b, r0, r1, c_bank0, c_edge, c_edge)
+		_wake_tri(st, p0b, r1, p1b, c_bank0, c_edge, c_bank1)
+		_wake_tri(st, m0, p0b, p1b, c_mid0, c_bank0, c_bank1)
+		_wake_tri(st, m0, p1b, m1, c_mid0, c_bank1, c_mid1)
+	s.wake.mesh = st.commit()
+	s.wake.visible = true
+
+
+func _wake_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, ca: Color, cb: Color, cc: Color) -> void:
+	var n := (b - a).cross(c - a)
+	if n.length_squared() < 0.00001:
+		return
+	n = n.normalized()
+	# Prefer upward facing.
+	if n.y < 0.0:
+		n = -n
+		st.set_normal(n)
+		st.set_color(ca)
+		st.add_vertex(a)
+		st.set_normal(n)
+		st.set_color(cc)
+		st.add_vertex(c)
+		st.set_normal(n)
+		st.set_color(cb)
+		st.add_vertex(b)
+	else:
+		st.set_normal(n)
+		st.set_color(ca)
+		st.add_vertex(a)
+		st.set_normal(n)
+		st.set_color(cb)
+		st.add_vertex(b)
+		st.set_normal(n)
+		st.set_color(cc)
+		st.add_vertex(c)
 
 
 func _sync_shell(sh: Shell) -> void:
