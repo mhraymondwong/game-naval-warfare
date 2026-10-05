@@ -23,6 +23,9 @@ const ENEMY_DMG := 210
 const FONT_PATH := "res://assets/fonts/NotoSansCJK-Regular.ttc"
 const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
 const SEA_SHADER := preload("res://shaders/sea.gdshader")
+const VIRTUAL_PAD_SCRIPT := preload("res://scripts/virtual_pad.gd")
+const FIRE_PAD_SCRIPT := preload("res://scripts/fire_pad.gd")
+const NAVAL_PANEL_SCRIPT := preload("res://scripts/naval_panel.gd")
 
 var font: Font
 var player: Ship
@@ -44,16 +47,15 @@ var outcome := ""
 var cam: Camera3D
 var cam_ready := false
 var sea_time := 0.0
-var hp_fill: ColorRect
-var foe_label: Label
-var hp_label: Label
-var speed_label: Label
-var turret_label: Label
-var fire_btn: Button
 var banner: Label
 var retry: Button
 var dim: ColorRect
 var map_ctrl: Control
+var naval_panel: Control
+var virtual_pad: Control
+var fire_pad: Control
+var throttle_order := 0.0
+var pad_rudder := 0.0
 var aim_marks: Array[MeshInstance3D] = []
 var shell_mesh: BoxMesh
 var splash_mesh: TorusMesh
@@ -840,93 +842,67 @@ func _build_ui() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(root)
 
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	panel.offset_right = 292
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var panel_box := _flat(Color(0.035, 0.07, 0.11, 0.9), 0)
-	panel_box.content_margin_left = 18
-	panel_box.content_margin_right = 16
-	panel_box.content_margin_top = 22
-	panel_box.content_margin_bottom = 16
-	panel.add_theme_stylebox_override("panel", panel_box)
-	root.add_child(panel)
+	# Professional left HUD (narrow floating glass panel)
+	naval_panel = Control.new()
+	naval_panel.set_script(NAVAL_PANEL_SCRIPT)
+	naval_panel.position = Vector2(10, 10)
+	naval_panel.size = Vector2(228, 448)
+	naval_panel.custom_minimum_size = Vector2(228, 448)
+	naval_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	naval_panel.setup(font)
+	root.add_child(naval_panel)
 
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
-	panel.add_child(col)
-
-	col.add_child(_lab("戰艦 · 海風", 28, Color(0.97, 0.94, 0.84)))
-	foe_label = _lab("敵艦 10", 18, Color(0.93, 0.70, 0.58))
-	col.add_child(foe_label)
-	col.add_child(_rule())
-	col.add_child(_lab("耐久", 16, Color(0.75, 0.84, 0.86)))
-
-	var track := ColorRect.new()
-	track.color = Color(0.04, 0.06, 0.07)
-	track.custom_minimum_size = Vector2(248, 22)
-	track.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_child(track)
-	hp_fill = ColorRect.new()
-	hp_fill.color = Color(0.36, 0.78, 0.46)
-	hp_fill.position = Vector2(3, 3)
-	hp_fill.size = Vector2(242, 16)
-	track.add_child(hp_fill)
-
-	hp_label = _lab("3000/3000", 22, Color(0.95, 0.97, 0.93))
-	col.add_child(hp_label)
-	col.add_child(_gap(10))
-	col.add_child(_lab("航速", 16, Color(0.75, 0.84, 0.86)))
-	speed_label = _lab("0.0 節", 32, Color(0.78, 0.93, 0.98))
-	col.add_child(speed_label)
-	col.add_child(_gap(8))
-	col.add_child(_lab("炮塔", 16, Color(0.75, 0.84, 0.86)))
-	turret_label = _lab("0°", 32, Color(0.86, 0.95, 0.72))
-	col.add_child(turret_label)
-	col.add_child(_gap(18))
-	col.add_child(_lab("鍵盤", 15, Color(0.62, 0.72, 0.74)))
-	col.add_child(_lab("W 前進   S 後退", 15, Color(0.82, 0.88, 0.86)))
-	col.add_child(_lab("A 左轉   D 右轉", 15, Color(0.82, 0.88, 0.86)))
-	col.add_child(_lab("Q 炮塔左轉  E 炮塔右轉", 15, Color(0.82, 0.88, 0.86)))
-	col.add_child(_lab("空白鍵 開火", 15, Color(0.82, 0.88, 0.86)))
-
+	# Minimap top-right
 	var frame := PanelContainer.new()
 	frame.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	frame.offset_left = -268
-	frame.offset_top = 14
-	frame.offset_right = -14
-	frame.offset_bottom = 14 + 168
-	frame.add_theme_stylebox_override("panel", _flat(Color(0.03, 0.08, 0.12, 0.92), 6))
+	frame.offset_left = -248
+	frame.offset_top = 12
+	frame.offset_right = -12
+	frame.offset_bottom = 12 + 152
+	var map_box := _flat(Color(0.04, 0.09, 0.14, 0.82), 8)
+	map_box.border_color = Color(0.78, 0.64, 0.30, 0.85)
+	map_box.border_width_left = 2
+	map_box.border_width_top = 2
+	map_box.border_width_right = 2
+	map_box.border_width_bottom = 2
+	frame.add_theme_stylebox_override("panel", map_box)
 	root.add_child(frame)
 
 	map_ctrl = Control.new()
 	map_ctrl.set_script(MINIMAP_SCRIPT)
 	map_ctrl.battle = self
 	map_ctrl.set_anchors_preset(Control.PRESET_FULL_RECT)
-	map_ctrl.offset_left = 8
-	map_ctrl.offset_top = 8
-	map_ctrl.offset_right = -8
-	map_ctrl.offset_bottom = -8
+	map_ctrl.offset_left = 6
+	map_ctrl.offset_top = 6
+	map_ctrl.offset_right = -6
+	map_ctrl.offset_bottom = -6
 	map_ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.add_child(map_ctrl)
 
-	var bar := HBoxContainer.new()
-	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bar.offset_left = 308
-	bar.offset_top = -72
-	bar.offset_right = -16
-	bar.offset_bottom = -14
-	bar.add_theme_constant_override("separation", 8)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(bar)
+	# Virtual helm pad — bottom-left of sea view
+	virtual_pad = Control.new()
+	virtual_pad.set_script(VIRTUAL_PAD_SCRIPT)
+	virtual_pad.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	virtual_pad.offset_left = 24
+	virtual_pad.offset_top = -196
+	virtual_pad.offset_right = 24 + 172
+	virtual_pad.offset_bottom = -24
+	virtual_pad.throttle_changed.connect(_on_throttle_changed)
+	virtual_pad.rudder_changed.connect(_on_rudder_changed)
+	root.add_child(virtual_pad)
 
-	_hold_button(bar, "前進", "fwd", false)
-	_hold_button(bar, "後退", "back", false)
-	_hold_button(bar, "左轉", "left", false)
-	_hold_button(bar, "右轉", "right", false)
-	_hold_button(bar, "炮塔左轉", "tleft", false)
-	_hold_button(bar, "炮塔右轉", "tright", false)
-	fire_btn = _hold_button(bar, "開火", "fire", true)
+	# Fire cluster — bottom-right
+	fire_pad = Control.new()
+	fire_pad.set_script(FIRE_PAD_SCRIPT)
+	fire_pad.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	fire_pad.offset_left = -220
+	fire_pad.offset_top = -170
+	fire_pad.offset_right = -16
+	fire_pad.offset_bottom = -16
+	fire_pad.fire_changed.connect(func(d): _set_hold("fire", d))
+	fire_pad.turret_left_changed.connect(func(d): _set_hold("tleft", d))
+	fire_pad.turret_right_changed.connect(func(d): _set_hold("tright", d))
+	root.add_child(fire_pad)
 
 	dim = ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -949,16 +925,17 @@ func _build_ui() -> void:
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(banner)
 
+	# Graphic retry button (icon + short label)
 	retry = Button.new()
-	retry.text = "再來一次"
+	retry.text = "  再來一次"
 	retry.visible = false
 	retry.focus_mode = Control.FOCUS_NONE
 	retry.set_anchors_preset(Control.PRESET_CENTER)
-	retry.offset_left = -110
-	retry.offset_top = 16
-	retry.offset_right = 110
-	retry.offset_bottom = 72
-	_style_button(retry, true)
+	retry.offset_left = -100
+	retry.offset_top = 20
+	retry.offset_right = 100
+	retry.offset_bottom = 76
+	_style_retry(retry)
 	retry.pressed.connect(_on_retry)
 	root.add_child(retry)
 
@@ -973,20 +950,6 @@ func _lab(text: String, size: int, color: Color) -> Label:
 	return l
 
 
-func _gap(h: float) -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, h)
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return c
-
-
-func _rule() -> ColorRect:
-	var r := ColorRect.new()
-	r.color = Color(0.55, 0.62, 0.48, 0.7)
-	r.custom_minimum_size = Vector2(0, 2)
-	return r
-
-
 func _flat(color: Color, radius: int) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color
@@ -997,32 +960,62 @@ func _flat(color: Color, radius: int) -> StyleBoxFlat:
 	return sb
 
 
-func _style_button(btn: Button, hot: bool) -> void:
-	var normal := Color(0.12, 0.34, 0.42) if not hot else Color(0.62, 0.34, 0.18)
-	var hover := normal.lightened(0.12)
-	var pressed := normal.darkened(0.18)
-	btn.add_theme_stylebox_override("normal", _flat(normal, 8))
-	btn.add_theme_stylebox_override("hover", _flat(hover, 8))
-	btn.add_theme_stylebox_override("pressed", _flat(pressed, 8))
-	btn.add_theme_stylebox_override("focus", _flat(normal, 8))
+func _style_retry(btn: Button) -> void:
+	var normal := _flat(Color(0.12, 0.22, 0.30, 0.92), 12)
+	normal.border_color = Color(0.78, 0.64, 0.30, 0.95)
+	normal.border_width_left = 2
+	normal.border_width_top = 2
+	normal.border_width_right = 2
+	normal.border_width_bottom = 2
+	var hover := _flat(Color(0.18, 0.34, 0.44, 0.95), 12)
+	hover.border_color = Color(0.40, 0.90, 0.98, 0.95)
+	hover.border_width_left = 2
+	hover.border_width_top = 2
+	hover.border_width_right = 2
+	hover.border_width_bottom = 2
+	var pressed := _flat(Color(0.08, 0.16, 0.22, 0.95), 12)
+	pressed.border_color = Color(0.78, 0.64, 0.30, 0.8)
+	pressed.border_width_left = 2
+	pressed.border_width_top = 2
+	pressed.border_width_right = 2
+	pressed.border_width_bottom = 2
+	btn.add_theme_stylebox_override("normal", normal)
+	btn.add_theme_stylebox_override("hover", hover)
+	btn.add_theme_stylebox_override("pressed", pressed)
+	btn.add_theme_stylebox_override("focus", normal)
 	btn.add_theme_font_override("font", font)
-	btn.add_theme_font_size_override("font_size", 20)
-	btn.add_theme_color_override("font_color", Color(0.97, 0.97, 0.94))
-	btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	btn.add_theme_color_override("font_pressed_color", Color(0.9, 0.9, 0.86))
+	btn.add_theme_font_size_override("font_size", 22)
+	btn.add_theme_color_override("font_color", Color(0.96, 0.93, 0.84))
+	btn.add_theme_color_override("font_hover_color", Color(0.40, 0.95, 1.0))
+	btn.add_theme_color_override("font_pressed_color", Color(0.85, 0.82, 0.72))
+	# Procedural refresh icon via button icon
+	var img := Image.create(28, 28, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for a in range(0, 270):
+		var rad := deg_to_rad(float(a) - 90.0)
+		for rr in range(8, 11):
+			var x := int(14.0 + cos(rad) * float(rr))
+			var y := int(14.0 + sin(rad) * float(rr))
+			if x >= 0 and y >= 0 and x < 28 and y < 28:
+				img.set_pixel(x, y, Color(0.4, 0.9, 0.98, 1))
+	# Arrow head at end of arc
+	for dx in range(-3, 4):
+		for dy in range(-3, 4):
+			var px := 14 + 10 + dx
+			var py := 14 + dy
+			if px >= 0 and py >= 0 and px < 28 and py < 28 and dx * dx + dy * dy < 10:
+				img.set_pixel(px, py, Color(0.4, 0.9, 0.98, 1))
+	var tex := ImageTexture.create_from_image(img)
+	btn.icon = tex
+	btn.expand_icon = false
 
 
-func _hold_button(bar: HBoxContainer, text: String, action: String, hot: bool) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.custom_minimum_size = Vector2(0, 50)
-	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_button(btn, hot)
-	btn.button_down.connect(_set_hold.bind(action, true))
-	btn.button_up.connect(_set_hold.bind(action, false))
-	bar.add_child(btn)
-	return btn
+func _on_throttle_changed(value: float) -> void:
+	throttle_order = value
+
+
+func _on_rudder_changed(value: float) -> void:
+	pad_rudder = value
 
 
 func _set_hold(action: String, down: bool) -> void:
@@ -1074,19 +1067,29 @@ func _process(delta: float) -> void:
 
 
 func _steer_player(dt: float) -> void:
-	var turn := 0.0
+	# Keyboard W/S set persistent throttle order (engine telegraph style).
+	if Input.is_key_pressed(KEY_W):
+		throttle_order = 1.0
+		if virtual_pad:
+			virtual_pad.set_throttle_order(1.0)
+	elif Input.is_key_pressed(KEY_S):
+		throttle_order = -1.0
+		if virtual_pad:
+			virtual_pad.set_throttle_order(-1.0)
+	var turn := clampf(pad_rudder, -1.0, 1.0)
 	if _held("left"):
 		turn -= 1.0
 	if _held("right"):
 		turn += 1.0
+	turn = clampf(turn, -1.0, 1.0)
 	player.heading += turn * TURN_RATE * dt
-	var thrust := 0.0
-	if _held("fwd"):
-		thrust = 1.0
-	elif _held("back"):
-		thrust = -0.42
-	var target := thrust * MAX_SPEED
-	var rate := ACCEL if thrust != 0.0 else ACCEL * 0.55
+	# throttle_order -1..1 → ahead MAX_SPEED or astern 0.42*MAX_SPEED
+	var target := 0.0
+	if throttle_order >= 0.0:
+		target = throttle_order * MAX_SPEED
+	else:
+		target = throttle_order * MAX_SPEED * 0.42
+	var rate := ACCEL if absf(throttle_order) > 0.01 else ACCEL * 0.55
 	player.along = move_toward(player.along, target, rate * dt)
 	_try_move(player, Vector2.from_angle(player.heading) * player.along * dt)
 	if _held("tleft"):
@@ -1462,29 +1465,39 @@ func _place_camera(dt: float) -> void:
 
 
 func _refresh_hud() -> void:
-	var ratio := clampf(float(player.hp) / float(player.max_hp), 0.0, 1.0)
-	hp_fill.size = Vector2(242.0 * ratio, 16.0)
-	if ratio > 0.55:
-		hp_fill.color = Color(0.36, 0.78, 0.46)
-	elif ratio > 0.28:
-		hp_fill.color = Color(0.86, 0.72, 0.28)
-	else:
-		hp_fill.color = Color(0.82, 0.32, 0.26)
-	hp_label.text = "%d/%d" % [player.hp, player.max_hp]
-	var foes_left := 0
+	var ca_left := 0
+	var dd_left := 0
 	for e in enemies:
 		if e.afloat:
-			foes_left += 1
-	if foe_label:
-		foe_label.text = "敵艦 %d" % foes_left
-	var knots := absf(player.along) / MAX_SPEED * MAX_KNOTS
-	speed_label.text = "%.1f 節" % knots
-	var deg := fmod(rad_to_deg(player.turret), 360.0)
-	if deg < 0.0:
-		deg += 360.0
-	turret_label.text = "%d°" % int(round(deg))
-	if fire_btn:
-		fire_btn.modulate = Color(0.72, 0.72, 0.72) if player.cd > 0.0 else Color(1, 1, 1)
+			if e.kind == 1:
+				ca_left += 1
+			else:
+				dd_left += 1
+	var knots := player.along / MAX_SPEED * MAX_KNOTS
+	var turret_rel := wrapf(player.turret - player.heading, -PI, PI)
+	if naval_panel:
+		naval_panel.update_stats(player.hp, player.max_hp, knots, turret_rel, ca_left, dd_left, throttle_order)
+	if fire_pad:
+		var ready := 1.0 if PLAYER_CD <= 0.001 else clampf(1.0 - player.cd / PLAYER_CD, 0.0, 1.0)
+		fire_pad.set_reload(ready)
+		fire_pad.set_turret_bearing(turret_rel)
+		fire_pad.sync_keyboard(
+			Input.is_key_pressed(KEY_SPACE),
+			Input.is_key_pressed(KEY_Q),
+			Input.is_key_pressed(KEY_E)
+		)
+	if virtual_pad:
+		var kbd_t := 0.0
+		if Input.is_key_pressed(KEY_W):
+			kbd_t = 1.0
+		elif Input.is_key_pressed(KEY_S):
+			kbd_t = -1.0
+		var kbd_r := 0.0
+		if Input.is_key_pressed(KEY_A):
+			kbd_r -= 1.0
+		if Input.is_key_pressed(KEY_D):
+			kbd_r += 1.0
+		virtual_pad.set_keyboard_visual(kbd_t, kbd_r)
 	var show := outcome != ""
 	dim.visible = show
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP if show else Control.MOUSE_FILTER_IGNORE
