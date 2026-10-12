@@ -8,7 +8,7 @@ config_version=5
 config/name="海戰風雲錄"
 config/description="Original 3D naval battle prototype"
 run/main_scene="res://scenes/battle.tscn"
-config/features=PackedStringArray("4.7", "Forward Plus")
+config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
 
@@ -19,4 +19,7 @@ window/stretch/aspect="keep"
 
 [rendering]
 
+textures/vram_compression/import_etc2_astc=true
 textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
